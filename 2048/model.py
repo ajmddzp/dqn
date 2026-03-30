@@ -48,12 +48,29 @@ def _ensure_render_initialized():
         return False
     if not pygame.get_init():
         pygame.init()
-    if screen is None:
+    if not pygame.display.get_init():
+        pygame.display.init()
+
+    # Recreate the display surface if user closed the window manually.
+    if screen is None or pygame.display.get_surface() is None:
         screen = pygame.display.set_mode((410, 500))
         pygame.display.set_caption("2048 RL")
+
     if _render_clock is None:
         _render_clock = pygame.time.Clock()
     return True
+
+
+def _shutdown_render():
+    global screen, _render_clock
+    if pygame is None:
+        screen = None
+        _render_clock = None
+        return
+    if pygame.display.get_init():
+        pygame.display.quit()
+    screen = None
+    _render_clock = None
 
 
 def set_render(enabled=True, fps=30):
@@ -63,12 +80,18 @@ def set_render(enabled=True, fps=30):
     if requested and pygame is None:
         ENABLE_RENDER = False
         if not _warned_no_pygame:
-            print("Render disabled: pygame is not installed. Install with: pip install pygame")
+            print(
+                "Render disabled: pygame is not installed. Install with: pip install pygame"
+            )
             _warned_no_pygame = True
         return
+
     ENABLE_RENDER = requested
     if ENABLE_RENDER:
         _ensure_render_initialized()
+    else:
+        # Close the window immediately when render is disabled.
+        _shutdown_render()
 
 
 def _encode_state():
@@ -214,7 +237,9 @@ def show():
                 screen.blit(text, (text_x, text_y))
 
     info_font = pygame.font.SysFont("Arial", 22, bold=True)
-    info_text = info_font.render(f"Score: {score}   Step: {step}", True, (250, 248, 239))
+    info_text = info_font.render(
+        f"Score: {score}   Step: {step}", True, (250, 248, 239)
+    )
     screen.blit(info_text, (10, 420))
 
     pygame.display.flip()
@@ -244,10 +269,14 @@ def RL_step(act):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 isGameOver = True
-                return _encode_state(), -10.0, True
+                set_render(False, fps=RENDER_FPS)
+                current_max = int(np.max(gameMap))
+                return _encode_state(), -10.0, True, current_max
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 isGameOver = True
-                return _encode_state(), -10.0, True
+                set_render(False, fps=RENDER_FPS)
+                current_max = int(np.max(gameMap))
+                return _encode_state(), -10.0, True, current_max
 
     act = int(act) % 4
     prev_score = score
@@ -273,7 +302,9 @@ def RL_step(act):
         empty_reward = 0.05 * empty_count
         max_tile_bonus = 0.0
         if current_max > _prev_max_tile:
-            max_tile_bonus = float(np.log2(current_max) - np.log2(max(_prev_max_tile, 2)))
+            max_tile_bonus = float(
+                np.log2(current_max) - np.log2(max(_prev_max_tile, 2))
+            )
         reward = merge_reward + empty_reward + max_tile_bonus
     else:
         reward = -0.5
@@ -283,4 +314,4 @@ def RL_step(act):
         reward -= 10.0
 
     show()
-    return _encode_state(), float(reward), bool(done)
+    return _encode_state(), float(reward), bool(done), current_max

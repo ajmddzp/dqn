@@ -1,0 +1,396 @@
+
+===== LINES 220-420 =====
+0220: reasoning robustness and compositionality. Recent studies have extended CoT to vision-language
+0221: models (Zhang et al., 2024b), which can be categorized into three types based on the modality of
+0222: reasoning steps: Textual CoT, Visual CoT, and Multimodal CoT. Specifically, Textual CoT (Zhang
+0223: et al., 2024c) in VLMs typically follows the format of vanilla LLM CoT. Visual CoT methods,
+0224: such as CoT-VLA (Zhao et al., 2025) and DreamVLA (Zhang et al., 2025b), generate future frames
+0225: before action prediction in manipulation tasks, while Multimodal CoT (Cheng et al., 2025) jointly
+0226: predicts paired textual and visual reasoning steps in multimodal tasks. To the best of our knowledge,
+0227: FantasyVLNis the first unified CoT reasoning framework that integrates these three reasoning
+0228: paradigms.
+0229: 3 Methods
+0230: 3.1 Overview
+0231: We proposeFantasyVLN, a VLN framework that integrates multimodal reasoning modes as its
+0232: core design, while enabling implicit reasoning for efficient inference. As shown in Figure 2,
+0233: FantasyVLNinternalizes diverse CoT reasoning patterns across modalities through end-to-end
+0234: joint training, and enhances the non-CoT reasoning mode via a cross-mode alignment constraint.
+0235: This enables combining the advantages of both textual and visual CoT reasoning without incurring
+0236: explicit CoT reasoning time. Moreover, we perform visual CoT reasoning in the latent space of the
+0237: V AR model (Tian et al., 2024), which improves training and inference efficiency compared with
+0238: pixel-space methods.
+0239: Below, we introduce the problem setup, cross-mode alignment constraint, unified multimodal implicit
+0240: reasoning and latent visual CoT learning.
+0241: 3.2 Problem Setup
+0242: VLN aims to develop an embodied agentπθ that navigates continuous 3D environmentsObased on a
+0243: natural language instructionIand visual observations, which can be formulated as a non-Markovian
+0244: temporal decision problem. Lets 0 denote the initial state, i.e., location and orientation, andUdenote
+0245: the action space. At each timestept, the agentπ θ receives multi-view visual observationso t ∈ O
+0246: and predicts future actionsA t ∈ Uconditioned on the instructionIand historical observations
+0247: {o≤t}. Subsequently, the predicted actionsA t are executed, transferring the agentπ θ to a new state
+0248: according to the environment dynamics. This interaction process continues until a stop action is
+0249: executed or the maximum stepTis reached.
+0250: 3.3 Compact Visual Chain-of-Thought
+0251: Conventional V-CoT reasoning predicts thousands of visual tokens at each reasoning step, resulting
+0252: in low training efficiency and high inference latency. To address this issue, we presentCompact
+0253: Visual Chain-of-Thought(CompV-CoT), which trainsQwen2.5-VLto directly generate a compact
+0254: set of visual tokens in the latent space of a pretrained V AR model, yielding a novel compressed
+0255: visual chain-of-thought representation with far fewer tokens. The V AR model follows a next-scale
+0256: prediction paradigm to hierarchically encode visual information, achieving higher efficiency than
+0257: 4
+0258: 
+0259: ===== PAGE 5 =====
+0260: Fantasy AIGC Team
+0261: conventional autoencoding approaches such as V AE, VQ-V AE (Gafni et al., 2022) or RAE (Zheng
+0262: et al., 2025). Given a256×256image, the V AR model enables precise reconstruction using the
+0263: corresponding low-scale representations, which contain only30visual tokens. As shown in Table 1,
+0264: V AR achieves a higher compression ratio under comparable reconstruction quality.
+0265: Table 1: Comparison of compression ratio and reconstruction error (MSE) across different visual
+0266: compressors.
+0267: Compressors Comp. Ratio MSE
+0268: RAE-DINOv2-B 1/256 0.012
+0269: RAE-SigLIP2-B 1/256 0.011
+0270: V AE 1/640.005
+0271: VQV AE 1/64 0.007
+0272: V AR1/21850.039
+0273: Specifically, we employ the V AR model as the visual decoder of the VLM and perform V-CoT
+0274: in the V AR latent space. The VLM first takes navigation instructions and visual observations as
+0275: input and then generates latent representations of future observations before predicting actions.
+0276: The V AR model finally decodes generated representations into pixel frames. We freeze the V AR
+0277: model during training, while the VLM first learns to predict latent future observations and then
+0278: infers the corresponding actions. During inference, we use only the VLM to perform visual CoT-
+0279: based navigation without explicit V AR decoding. Owing to the highly efficient visual information
+0280: compression and non-display image decoding, the proposed CompV-CoT method improves both
+0281: training and inference efficiency.
+0282: 3.4 Unified Multimodal Chain-of-Thought
+0283: Building on CompV-CoT, we further present aUnified Multimodal Chain-of-Thought(UM-CoT)
+0284: framework that integrates textual, compressed visual, and multimodal reasoning within a single
+0285: agent.
+0286: Textual CoT in VLN.Textual CoT (T-CoT) models the agent’s reasoning as an explicit semantic
+0287: planning process that bridges language understanding and action decision. Instead of directly
+0288: mapping instructions to actions, the agent first generates textual intermediate reasoning steps bTt.
+0289: These reasoning steps then provide structured causal guidance for predicting subsequent actions
+0290: bAt, enabling interpretable and more reliable decision-making. Specifically, the intermediate steps
+0291: typically involve inferring subgoals from the instruction, assessing progress through current and
+0292: historical visual observations, and identifying actionable cues for achieving the next objective.
+0293: CompV-CoT as Visual CoT.For visual CoT (V-CoT), we directly adopt the CompV-CoT intro-
+0294: duced in Sec. 3.3 as the visual reasoning mode in UM-CoT. In this setting, the agent imagines
+0295: future observations in the V AR latent space by predicting compressed visual tokens, and then infers
+0296: actions conditioned on the imagined latent trajectory. Compared with pixel-space prediction, this
+0297: CompV-CoT design yields more efficient and stable visual reasoning.
+0298: Multimodal CoT in VLN.Multimodal CoT (MM-CoT) is defined as a native combination of T-
+0299: CoT and CompV-CoT, where the agent is required to generate paired textual–visual reasoning steps.
+0300: We denote the multimodal reasoning trace asM t = [T t,V t], which jointly encodes semantic plans
+0301: and imagined future observations, and use it to guide subsequent action prediction.
+0302: Unified Multimodal CoT Reasoning Framework.To unify the above reasoning modes within a
+0303: single framework, we introduce two binary gating signalsg T andg V that control whether textual
+0304: and visual reasoning is activated. GivenI,{o ≤t}, and(g T , gV ), the agent jointly predicts reasoning
+0305: traces and actions:
+0306: [bRt, bAt] =π θ
+0307: 
+0308: I,{o ≤t}, gT , gV
+0309: 
+0310: ,(1)
+0311: 5
+0312: 
+0313: ===== PAGE 6 =====
+0314: Fantasy AIGC Team
+0315: where
+0316: bRt =
+0317: 
+0318: 
+0319: 
+0320: None,if(g T , gV ) = (0,0),
+0321: bTt,if(g T , gV ) = (1,0),
+0322: bVt,if(g T , gV ) = (0,1),
+0323: cMt,if(g T , gV ) = (1,1).
+0324: (2)
+0325: This gating mechanism allows a single policy to flexibly operate in CoT, T-CoT, CompV-CoT, and
+0326: MM-CoT modes.
+0327: Joint Training via Data Mixture.Given the navigation instructionI, visual observations{o ≤t}
+0328: and the ground truth actionA t. To enable end-to-end training, we organize the expert navigation
+0329: datasetDinto five-tuples:
+0330: [I,{o ≤t},T t,V t,A t]∈ D,(3)
+0331: whereT t andV t denote the ground truth textual reasoning steps and CompV-CoT visual reasoning
+0332: steps, respectively. We employQwen-VL-Maxto generate textual reasoning tracesT t. During
+0333: training,(g T , gV )are uniformly sampled and integrated withIand{o ≤t}to form the query, while
+0334: the answer is constructed according to Eq. (2) by selectingR t ∈ {None,T t,V t,M t}together with
+0335: At. The joint objective is defined as:
+0336: LJoint = (¬g T ∧ ¬gV )L CE
+0337: bAt,A t
+0338: 
+0339: + (gT ∧ ¬gV )L CE
+0340: 
+0341: [bTt, bAt],[T t,A t]
+0342: 
+0343: + (¬gT ∧g V )L CE
+0344: 
+0345: [bVt, bAt],[V t,A t]
+0346: 
+0347: + (gT ∧g V )L CE
+0348: 
+0349: [cMt, bAt],[M t,A t]
+0350: 
+0351: ,
+0352: (4)
+0353: whereL CE denotes the causal cross-entropy loss.
+0354: Algorithm 1Cross-Mode Aligned Joint Training
+0355: 1:Input:DatasetD, parametersθ, learning rateη, alignment weightλ align
+0356: 2:Output:Trained parametersθ ∗
+0357: 3:whilenot convergeddo
+0358: 4:[I,{o ≤t},T t,V t,A t]∼ D
+0359: 5: bAt ←π θ(I,{o ≤t}, gT =0, gV =0)
+0360: 6:θ←θ−η∇ θLCE(bAt,A t)
+0361: 7: eAt ←sg
+0362: 
+0363: πθ(I,{o ≤t}, gT =0, gV =0)
+0364: 
+0365: 8:[ bTt, bAT
+0366: t ]←π θ(I,{o ≤t}, gT =1, gV =0)
+0367: 9:[ bVt, bAV
+0368: t ]←π θ(I,{o ≤t}, gT =0, gV =1)
+0369: 10:[ cMt, bAM
+0370: t ]←π θ(I,{o ≤t}, gT =1, gV =1)
+0371: 11:ComputeL ∗
+0372: Joint using Eq. (7)
+0373: 12:θ←θ−η∇ θL∗
+0374: Joint
+0375: 13:end while
+0376: 14:θ ∗ ←θ
+0377: 15:returnθ ∗
+0378: 3.5 Cross-Mode Alignment Constraint
+0379: To prevant conflict between different reasoning modes, we introduce aCross-Mode Alignment
+0380: Constraintthat regularizes the unified multimodal CoT training. The key idea is to use the non-CoT
+0381: reasoning mode as a supervisory signal to align all CoT variants, thereby embedding diverse reasoning
+0382: behaviors into a shared latent policy. Let bAt, bAT
+0383: t , bAV
+0384: t , and bAM
+0385: t denote the action predictions from
+0386: the non-CoT, T-CoT, V-CoT, and MM-CoT reasoning modes, respectively. In each iteration, we first
+0387: optimize the non-CoT reasoning mode with the objective:
+0388: Lnon-CoT =L CE
+0389: bAt,A t
+0390: 
+0391: ,(5)
+0392: 6
+0393: 
+0394: ===== PAGE 7 =====
+0395: Fantasy AIGC Team
+0396: Table 2: Comparison of navigation accuracy across different VLN methods on LH-VLN benchmark.
+0397: The best and second-best results are marked in bold and underlined, respectively.
+0398: CoT Modal Methods SR ISR CSR CGT
+0399: None/ZS
+0400: Random 0 0 0 0
+0401: GLM-4v prompt 0 0 0 0
+0402: GPT-4 + NaviLLM 0 2.19 1.45 2.61
+0403: MGDM 0 2.34 1.65 2.91
+0404: Visual CoT-VLA 0 0 0 0
+0405: WorldVLA 0 0 0 0
+0406: Textual Aux-Think 0.65 3.16 2.04 1.47
+0407: unified multimodalFantasyVLN2.44 11.01 9.64 8.99
+0408: where
+0409: bAt =π θ
+0410: 
+0411: I,{o ≤t}, gT = 0, gV = 0
+0412: 
+0413: .(6)
+0414: We then obtain the soft targets eAt by rerunning the forward process (6). Finally, we incorporate the
+0415: cross-mode alignment constraint into the joint objective of unified multimodal CoT reasoning:
+0416: L∗
+0417: Joint =L Align +L CoT,(7)
+0418: where
+0419: LAlign =L CE
+0420: bAT
+
+===== LINES 450-640 =====
+0450: latent representation. The overall algorithm is presented in Algorithm 1.
+0451: 3.6 VLN During Inference
+0452: Due to the real-time demands of VLN and the inference latency introduced by explicit CoT token
+0453: decoding, we follow Aux-Think (Wang et al., 2025) and adopt the non-CoT reasoning mode during
+0454: inference. Similar to Aux-Think (Wang et al., 2025), our framework serves as an implicit reasoning
+0455: mechanism that internalizes diverse CoT patterns and implicitly enhances non-CoT reasoning through
+0456: cross-mode alignment and joint training across reasoning modes.
+0457: 4 Experiments
+0458: 4.1 Experimental Setup
+0459: Benchmark.We evaluateFantasyVLNon the challenging LH-VLN (Song et al., 2025) bench-
+0460: mark, which is characterized by multi-stage tasks and long navigation trajectories. On one hand,
+0461: Table 3: Comparison of navigation accuracy across different reasoning mode combinations on LH-
+0462: VLN.
+0463: non-CoT T-CoT V-CoT MM-CoT SR ISR CSR CGT
+0464: ✓ 0 2.01 1.51 1.55
+0465: ✓ ✓ 0.98 8.26 6.60 6.15
+0466: ✓ ✓ 1.4611.19 9.668.84
+0467: ✓ ✓ 0.49 7.77 6.48 8.89
+0468: ✓ ✓ ✓ ✓ 2.4411.01 9.648.99
+0469: 7
+0470: 
+0471: ===== PAGE 8 =====
+0472: Fantasy AIGC Team
+0473: Table 4: Comparison of inference efficiency across different CoT reasoning methods. The best
+0474: results are marked in bold.
+0475: Reasoning Mode Methods Model Size APS
+0476: Explicit CoT-VLA 7B 0.19
+0477: Implicit
+0478: WorldVLA 7B 1.02
+0479: Aux-Think 8B 0.97
+0480: FantasyVLN7B1.03
+0481: multi-stage navigation requires the agent to sequentially reach multiple goals, imposing higher
+0482: demands on reasoning and planning. On the other hand, longer navigation trajectories amplify
+0483: cumulative errors compared to shorter ones. Following the standard LH-VLN setting, we perform
+0484: online evaluation on the test set, where both the tasks and scenes are unseen.
+0485: Baselines.We compared the proposedFantasyVLNwith several representative methods. They
+0486: can be divided into four categories: (i) textual CoT-based methods, Aux-Think (Wang et al., 2025);
+0487: (ii) visual CoT-based methods, CoT-VLA and WorldVLA; (iii) memory-based methods, MGDM; (iv)
+0488: other baselines provided by LH-VLN, GLM-4v prompt, NaviLLM and GPT-4 + NaviLLM. For fair
+0489: comparison, all methods are trained on the same LH-VLN training set, and the validation set is used
+0490: to select the best checkpoint for each method. For Aux-Think and CoT-VLA, we implement their
+0491: methods based on the descriptions in their papers, as the training codes are not publicly available. For
+0492: WorldVLA, we adapt the official implementation by modifying the preprocessing pipeline to support
+0493: training on the LH-VLN dataset. For all other methods, we use the implementations provided by
+0494: LH-VLN.
+0495: Metrics.Following (Song et al., 2025), we use Success Rate (SR), Independent Success Rate
+0496: (ISR), Conditional Success Rate (CSR), and CSR weighted by Ground Truth (CGT) to measure
+0497: multi-stage navigation accuracy. SR denotes the success rate of multi-stage task navigation, ISR
+0498: represents the success rate of individual subtasks, CSR weights the ISR according to the success of
+0499: preceding subtasks, and CGT further weights the CSR based on the length of the expert trajectory.
+0500: Moreover, we introduce the Action Per Second (APS) to evaluate inference efficiency:
+0501: APS= Nact
+0502: Tnav
+0503: ,(10)
+0504: whereN act denotes the total number of executed actions, andTnav represents the total navigation time
+0505: in seconds.
+0506: 4.2 Main Results
+0507: Navigation Accuracy.Table 2 presents the quantitative results of navigation accuracy across
+0508: different VLN methods on the LH-VLN benchmark.FantasyVLNachieves superior performance
+0509: across all metrics, with SR, ISR, CSR, and CGT of 2.44, 11.01, 9.64, and 8.99, respectively,
+0510: significantly surpassing all baselines. Aux-Think shows suboptimal results in SR, ISR, and CSR,
+0511: indicating that T-CoT enhances navigation robustness compared to non-CoT approaches. However,
+0512: its performance still exhibits a notable gap compared toFantasyVLN, owing to the limitations of
+0513: single-modal CoT modeling and the lack of an explicit–implicit alignment mechanism. MGDM
+0514: performs relatively well among non-CoT baselines, particularly in CGT, suggesting that memory
+0515: mechanisms offer limited yet tangible benefits. Overall, the results demonstrate that our unified
+0516: multimodal implicit reasoning framework is crucial for tackling the complex multi-stage VLN task.
+0517: Inference Efficiency.To quantify the inference efficiency of different CoT reasoning methods,
+0518: we report APS in Table 4. Implicit reasoning models, includingFantasyVLN, Aux-Think, and
+0519: WorldVLA, exhibit comparable efficiency and outperform the explicit approach CoT-VLA by a
+0520: substantial margin. This outcome is expected. Implicit reasoning predicts each action by decoding
+0521: a single token, while explicit reasoning requires generating CoT reasoning steps with thousands
+0522: of tokens. Under similar model sizes, implicit CoT reasoning predicts approximately one action
+0523: 8
+0524: 
+0525: ===== PAGE 9 =====
+0526: Fantasy AIGC Team
+0527: per second, while explicit CoT reasoning yields only 0.19 actions per second. Therefore, implicit
+0528: reasoning better satisfies the real-time requirements of the VLN task.
+0529: 4.3 Ablation Studies
+0530: Contribution of Each Reasoning Mode.FantasyVLNintegrates diverse reasoning modes within
+0531: a unified framework. To verify the contribution of each reasoning mode to the overall framework,
+0532: we explore various combinations of non-CoT, T-CoT, V-CoT, and MM-CoT modes during training.
+0533: As shown in Table 3, combining any CoT reasoning mode with non-CoT reasoning consistently
+0534: improves navigation performance across all metrics. Integrating all four reasoning modes further
+0535: enhances the overall performance.
+0536: VAR Scale Selection.As detailed in Section 3.3, we perform V-CoT in the latent space of V AR. To
+0537: select the optimal V AR scale for latent V-CoT learning, we conduct comprehensive ablation studies
+0538: on a subset of LH-VLN. We first report the ISR results across different V AR scales, ranging from 1 to
+0539: 10, as shown in Figure 3. The results show that scale 4 achieves the best performance. We attribute
+0540: this to smaller scales lacking sufficient visual information, while larger scales leading redundancy.
+0541: To validate this argument, we randomly sample 100 images from LH-VLN and employ a pretrained
+0542: V AR model to reconstruct them. Specifically, V AR takes the ground truth latents up to a given scale
+0543: as input and predicts the remaining latent scales. The reconstructed images are then obtained by
+0544: decoding both the ground truth and predicted latents together. As shown in Figure 4, the results are
+0545: consistent with our argument.
+0546: Effect of Cross-Mode Alignment Constraint.We introduce a cross-mode alignment constraint
+0547: into the joint training ofFantasyVLN. Table 5 compares SR, ISR, CSR, and CGT performance
+0548: with and without this constraint. Without the cross-mode alignment constraint (✗),FantasyVLN
+0549: exhibits weak navigation ability, achieving only marginal ISR, CSR, and CGT scores. Adopting
+0550: this constraint (✓) yields substantial improvements across all metrics, with SR increasing from 0 to
+0551: 2.44, ISR from 2.39 to 11.01, CSR from 1.19 to 9.64, and CGT from 1.28 to 8.99. This indicates
+0552: that cross-mode alignment is essential forFantasyVLN, a unified framework that integrates diverse
+0553: reasoning modes.
+0554: 0 1 2 3 4 5 6 7 8 9
+0555: V AR Scale
+0556: 0
+0557: 2
+0558: 4
+0559: 6
+0560: 8ISR
+0561: 0.00 0.00
+0562: 3.76
+0563: 7.41
+0564: 6.00
+0565: 3.76 3.76
+0566: 2.26
+0567: 0.75 0.90
+0568: Figure 3: ISR variation with respect to different V AR scales.
+0569: 9
+0570: 
+0571: ===== PAGE 10 =====
+0572: Fantasy AIGC Team
+0573: Scale 1 Scale 2 Scale 3 Scale 4 Scale 5 Scale 6 Scale 7 Scale 8 Scale 9 Scale 10
+0574: GT
+0575: Figure 4: Qualitative comparison of image reconstruction results produced by the V AR model using
+0576: latent inputs across different scales. For each image, the V AR model receives the ground truth
+0577: latents up to a specified scale and predicts all remaining scales; the final reconstruction is obtained
+0578: by decoding the combined ground truth and predicted latents.
+0579: Table 5: Comparison of SR, ISR, CSR, and CGT performance with and without cross-mode align-
+0580: ment.
+0581: Alignment Constraint SR ISR CSR CGT
+0582: ✗ 0 2.39 1.19 1.28
+0583: ✓ 2.44 11.01 9.64 8.99
+0584: 4.4 More Results
+0585: Training Efficiency.As shown in Table 2, existing visual CoT methods (e.g., WorldVLA) achieve
+0586: limited navigation accuracy on the LH-VLN benchmark, failing to generalize to long-horizon sce-
+0587: narios. To understand the underlying cause, we compare their training efficiency with our unified
+0588: multimodal formulation. As shown in Figure 5, WorldVLA exhibits slow and unstable convergence,
+0589: requiring over10k iterations to reach moderate token prediction accuracy. This indicates that pixel-
+0590: level V-CoT learning delivers weak gradient signals, as the model must reconstruct high-dimensional
+0591: visual tokens for each reasoning step. In contrast,FantasyVLNconverges rapidly within a few
+0592: thousand iterations, reflecting stable supervision and more efficient learning dynamics. This im-
+0593: provement stems from our CompV-CoT design, where visual reasoning operates in a compact latent
+0594: space encoded by the pretrained V AR compressor. By replacing dense pixel reconstruction with com-
+0595: pressed latent prediction, the model learns richer multimodal reasoning cues under a substantially
+0596: lighter optimization burden. Overall, these results highlight that CompV-CoT not only enhances
+0597: reasoning efficiency but also yields more stable and interpretable learning behavior, contributing to
+0598: the superior navigation accuracy ofFantasyVLNin long-horizon tasks.
+0599: Explicit vs. Implicit Reasoning.FantasyVLNsupports both explicit and implicit reasoning,
+0600: enabling us to systematically compare their effectiveness across different CoT modalities. As sum-
+0601: marized in Table 6, we evaluate the T-CoT, V-CoT, and MM-CoT models under two inference modes.
+0602: For each case, the model is jointly trained with its corresponding CoT mode and the direct prediction
+0603: pathway. During inference, using the CoT branch corresponds to explicit reasoning, while employing
+0604: the direct pathway corresponds to implicit reasoning. Overall, implicit reasoning consistently yields
+0605: higher navigation accuracy, particularly under multimodal settings. In MM-CoT, implicit inference
+0606: achieves the best performance with2.44SR and11.01ISR, surpassing the explicit counterpart by a
+0607: large margin. This result aligns with the observations in Aux-Think (Wang et al., 2025), suggesting
+0608: that explicit CoT decoding may amplify cumulative reasoning errors across long trajectories. We
+0609: attribute this phenomenon to two key factors: (i) the limited training data of LH-VLN (only18k
+0610: trajectory slices of five steps each) makes explicit CoT sequences prone to overfitting and error prop-
+0611: agation; (ii) explicit reasoning expands temporal dependencies, causing misaligned textual or visual
+0612: CoT tokens to accumulate deviations over time. In contrast, implicit reasoning benefits from cross-
+0613: mode alignment during training, allowing the model to internalize reasoning cues while maintaining
+0614: stable and efficient inference.
+0615: 10
+0616: 
+0617: ===== PAGE 11 =====
+0618: Fantasy AIGC Team
+0619: 0 2000 4000 6000 8000 10000 12000 14000
+0620: Iterations
+0621: 0.0
+0622: 0.2
+0623: 0.4
+0624: 0.6
+0625: 0.8
+0626: 1.0Train T oken Accuracy
+0627: WorldVLA
+0628: FantasyVLN
+0629: Figure 5: Comparison of training efficiency betweenFantasyVLNand WorldVLA.
+0630: Table 6: Comparison of explicit and implicit CoT reasoning across modalities.
+0631: Metrics Mode T-CoT V-CoT MM-CoT
+0632: SR explicit 0.98 0.49 0.98
+0633: implicit 0.49 1.46 2.44
+0634: ISR explicit 8.26 7.34 8.62
+0635: implicit 6.06 11.19 11.01
+0636: 5 Conclusion
+0637: We introducedFantasyVLN, a unified implicit reasoning framework that preserves the benefits
+0638: of Chain-of-Thought supervision while avoiding the token explosion inherent to explicit textual or
+0639: multimodal CoTs. By compressing imagined visual observations into a compact latent space via
+0640: a pretrained V AR model and jointly training across textual, visual, and multimodal CoT modes

@@ -16,6 +16,8 @@ EPSILON_END = 0.05
 EPSILON_DECAY_STEPS = 80000
 MAX_EPISODES = 1200
 MAX_STEPS_PER_EPISODE = 3000
+RENDER_EVERY_EPISODES = 100
+RENDER_FPS = 30
 
 N_ACTIONS = 4
 N_STATES = 16
@@ -28,11 +30,13 @@ class Net(nn.Module):
         super().__init__()
         self.fc1 = nn.Linear(N_STATES, 256)
         self.fc2 = nn.Linear(256, 256)
+        self.fc3 = nn.Linear(256, 256)
         self.out = nn.Linear(256, N_ACTIONS)
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
         return self.out(x)
 
 
@@ -113,14 +117,27 @@ class DQN:
         return float(loss.item())
 
 
-def train(render=True):
-    G.set_render(render, fps=30)
+def train(render=True, render_every=RENDER_EVERY_EPISODES, render_fps=RENDER_FPS):
+    # Start with render off, and only enable it on scheduled episodes.
+    G.set_render(False, fps=render_fps)
     dqn = DQN()
     print("\nCollecting experience...")
     time.sleep(1)
 
     start_time = time.time()
+    last_render_state = False
     for i_episode in range(MAX_EPISODES):
+        if render:
+            if render_every <= 1:
+                should_render = True
+            else:
+                should_render = (i_episode + 1) % render_every == 0
+        else:
+            should_render = False
+
+        if should_render != last_render_state:
+            G.set_render(should_render, fps=render_fps)
+            last_render_state = should_render
         s = G.reset()
         ep_r = 0.0
         steps = 0
@@ -128,7 +145,14 @@ def train(render=True):
 
         while True:
             a = dqn.choose_action(s)
-            s_, r, done = G.RL_step(a)
+            step_out = G.RL_step(a)
+            if len(step_out) == 4:
+                s_, r, done, current_max = step_out
+            elif len(step_out) == 3:
+                s_, r, done = step_out
+                current_max = int(max(max(row) for row in G.gameMap))
+            else:
+                raise ValueError(f"Unexpected RL_step return length: {len(step_out)}")
             dqn.store_transition(s, a, r, s_, done)
             loss = dqn.learn()
             if loss is not None:
@@ -142,10 +166,13 @@ def train(render=True):
                 loss_text = "None" if last_loss is None else f"{last_loss:.4f}"
                 print(
                     f"Ep: {i_episode:4d} | Steps: {steps:4d} | "
-                    f"Ep_r: {ep_r:8.2f} | Eps: {dqn.epsilon:.3f} | Loss: {loss_text}"
+                    f"Ep_r: {ep_r:8.2f} | Eps: {dqn.epsilon:.3f} | Loss: {loss_text} | "
+                    f"Ep_Max: {current_max}"
                 )
                 break
 
+    if last_render_state:
+        G.set_render(False, fps=render_fps)
     print("time:", time.time() - start_time)
 
 

@@ -148,6 +148,8 @@ class GRPO:
             # 返回张量 shape 约为 [1]，后续会用 group_advantages[0].item() 取标量
             group_advantages = self.compute_group_advantages([group_rewards])
 
+            # 基线的优势函数，用样本均值来估计真实的均值
+
             # 同一组内的所有样本共享同一个优势值
             # 当前组样本数（一般等于 GROUP_SIZE）
             n_samples = len(group_actions)
